@@ -1,6 +1,8 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use rjexpr::{BinOp, Expression, Literal, UnaryOp, parse};
+use rjexpr::{BinOp, Literal, UnaryOp, parse};
+
+type Expression<'a> = rjexpr::Expression<&'a str, Cow<'a, str>>;
 
 fn expect_parse(s: &str, expected: Expression<'_>) {
     let parsed = parse(s).unwrap();
@@ -155,7 +157,10 @@ fn should_parse_assign_with_equality() {
 
 #[test]
 fn should_parse_arrow_functions() {
-    expect_parse("() => x", Expression::arrow_func(vec![], id("x")));
+    expect_parse(
+        "() => x",
+        Expression::arrow_func(Vec::<&str>::new(), id("x")),
+    );
     expect_parse("(a) => a", Expression::arrow_func(vec!["a"], id("a")));
     expect_parse(
         "(a, b) => a + b",
@@ -168,8 +173,8 @@ fn should_parse_arrow_functions() {
         "fn(() => x)",
         Expression::invoke(
             id("fn"),
-            None,
-            vec![Expression::arrow_func(vec![], id("x"))],
+            None::<&str>,
+            vec![Expression::arrow_func(Vec::<&str>::new(), id("x"))],
         ),
     );
     expect_parse(
@@ -177,14 +182,14 @@ fn should_parse_arrow_functions() {
         Expression::binary(
             id("fn"),
             BinOp::NullishCoalesce,
-            Expression::arrow_func(vec![], id("x")),
+            Expression::arrow_func(Vec::<&str>::new(), id("x")),
         ),
     );
     expect_parse(
         "(() => x)()",
         Expression::invoke(
-            Expression::paren(Expression::arrow_func(vec![], id("x"))),
-            None,
+            Expression::paren(Expression::arrow_func(Vec::<&str>::new(), id("x"))),
+            None::<&str>,
             vec![],
         ),
     );
@@ -238,12 +243,15 @@ fn should_give_dot_high_associativity() {
 
 #[test]
 fn should_parse_a_function_with_no_arguments() {
-    expect_parse("a()", Expression::invoke(id("a"), None, vec![]));
+    expect_parse("a()", Expression::invoke(id("a"), None::<&str>, vec![]));
 }
 
 #[test]
 fn should_parse_a_single_function_argument() {
-    expect_parse("a(b)", Expression::invoke(id("a"), None, vec![id("b")]));
+    expect_parse(
+        "a(b)",
+        Expression::invoke(id("a"), None::<&str>, vec![id("b")]),
+    );
 }
 
 #[test]
@@ -251,7 +259,7 @@ fn should_parse_a_function_call_as_a_subexpression() {
     expect_parse(
         "a() + 1",
         Expression::binary(
-            Expression::invoke(id("a"), None, vec![]),
+            Expression::invoke(id("a"), None::<&str>, vec![]),
             BinOp::Add,
             num(1.0),
         ),
@@ -262,7 +270,7 @@ fn should_parse_a_function_call_as_a_subexpression() {
 fn should_parse_multiple_function_arguments() {
     expect_parse(
         "a(b, c)",
-        Expression::invoke(id("a"), None, vec![id("b"), id("c")]),
+        Expression::invoke(id("a"), None::<&str>, vec![id("b"), id("c")]),
     );
 }
 
@@ -272,8 +280,8 @@ fn should_parse_nested_function_calls() {
         "a(b(c))",
         Expression::invoke(
             id("a"),
-            None,
-            vec![Expression::invoke(id("b"), None, vec![id("c")])],
+            None::<&str>,
+            vec![Expression::invoke(id("b"), None::<&str>, vec![id("c")])],
         ),
     );
 }
@@ -315,7 +323,11 @@ fn should_parse_chained_method_calls() {
 fn should_parse_chained_function_calls() {
     expect_parse(
         "a()()",
-        Expression::invoke(Expression::invoke(id("a"), None, vec![]), None, vec![]),
+        Expression::invoke(
+            Expression::invoke(id("a"), None::<&str>, vec![]),
+            None::<&str>,
+            vec![],
+        ),
     );
 }
 
@@ -438,14 +450,14 @@ fn should_parse_map_literals() {
         "{'a': foo()}",
         Expression::map(HashMap::from([(
             Cow::Borrowed("a"),
-            Expression::invoke(id("foo"), None, vec![]),
+            Expression::invoke(id("foo"), None::<&str>, vec![]),
         )])),
     );
     expect_parse(
         "{'a': foo('a')}",
         Expression::map(HashMap::from([(
             Cow::Borrowed("a"),
-            Expression::invoke(id("foo"), None, vec![string("a")]),
+            Expression::invoke(id("foo"), None::<&str>, vec![string("a")]),
         )])),
     );
 }

@@ -1,5 +1,5 @@
 use nom::{Check, Err as NErr, Mode, OutputM, combinator::eof, multi::fold};
-use std::borrow::Cow;
+use std::{borrow::Cow, hash::Hash};
 
 use crate::{BinOp, Expression, Literal, UnaryOp};
 use nom::{
@@ -14,14 +14,18 @@ use nom::{
     sequence::{delimited, preceded, terminated},
 };
 
-pub fn parse(input: &str) -> Result<Expression<'_>, String> {
+pub fn parse<'a, S, B>(input: &'a str) -> Result<Expression<S, B>, String>
+where
+    S: From<&'a str> + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+{
     delimited(space0, opt(expr), eof)
         .parse(input)
         .map(|(_, expr)| expr.unwrap_or(Expression::Empty))
         .map_err(|err| err.to_string())
 }
 
-type PResult<'a, O = Expression<'a>> = IResult<&'a str, O>;
+type PResult<'a, S, B> = IResult<&'a str, Expression<S, B>>;
 
 macro_rules! parser_type {
     ($lifetime:tt, $output:ty) => {
@@ -29,45 +33,49 @@ macro_rules! parser_type {
     };
 }
 
-fn expr(input: &str) -> PResult<'_> {
+fn expr<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+where
+    S: From<&'a str> + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+{
     assignment.parse(input)
 }
 
-fn assignment(input: &str) -> PResult<'_> {
+fn assignment<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+where
+    S: From<&'a str> + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+{
     let (input2, left) = ternary.parse(input)?;
     let assign_not_eq = tokc('=');
     match (assign_not_eq, expr).parse(input2) {
-        Ok((input3, (_assign, right))) => Ok((
-            input3,
-            Expression::Binary {
-                op: BinOp::Assign,
-                left: Box::new(left),
-                right: Box::new(right),
-            },
-        )),
+        Ok((input3, (_assign, right))) => {
+            Ok((input3, Expression::binary(left, BinOp::Assign, right)))
+        }
         Err(_) => Ok((input2, left)),
     }
 }
 
-fn ternary(input: &str) -> PResult<'_> {
+fn ternary<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+where
+    S: From<&'a str> + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+{
     let (input2, cond) = pipe.parse(input)?;
     match (tokc('?'), expr, tokc(':'), expr).parse(input2) {
-        Ok((input3, (_, left, _, right))) => Ok((
-            input3,
-            Expression::Ternary {
-                cond: Box::new(cond),
-                left: Box::new(left),
-                right: Box::new(right),
-            },
-        )),
+        Ok((input3, (_, left, _, right))) => Ok((input3, Expression::ternary(cond, left, right))),
         Err(_) => Ok((input2, cond)),
     }
 }
 
 macro_rules! left_assoc_binary {
     ($name:ident, $expr:ident, $(( $op:literal, $op_t:ident )),*) => {
-        fn $name(input: &str) -> PResult<'_> {
-            fn op_p(input: &str) -> PResult<'_, BinOp> {
+        fn $name<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+        where
+            S: From<&'a str> + Clone,
+            B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+        {
+            fn op_p(input: &str) -> IResult<&str, BinOp> {
                 alt((
                     $(tok($op).map(|_| BinOp::$op_t),)*
                 )).parse(input)
@@ -153,7 +161,11 @@ where
     }
 }
 
-fn unary(input: &str) -> PResult<'_> {
+fn unary<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+where
+    S: From<&'a str> + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+{
     (unary_op, unary)
         .map(|(op, val)| {
             let Expression::Literal(Literal::Number(num)) = val else {
@@ -169,7 +181,7 @@ fn unary(input: &str) -> PResult<'_> {
         .parse(input)
 }
 
-fn unary_op(input: &str) -> PResult<'_, UnaryOp> {
+fn unary_op(input: &str) -> IResult<&str, UnaryOp> {
     alt((
         tokc('+').map(|_| UnaryOp::Plus),
         tokc('-').map(|_| UnaryOp::Minus),
@@ -178,12 +190,22 @@ fn unary_op(input: &str) -> PResult<'_, UnaryOp> {
     .parse(input)
 }
 
-fn postfix(input: &str) -> PResult<'_> {
+fn postfix<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+where
+    S: From<&'a str> + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+{
     primary.flat_map(collect_post_prefix).parse(input)
 }
 
 /// Parser returned by this function should only be used once
-fn collect_post_prefix<'a>(mut receiver: Expression<'a>) -> parser_type!('a, Expression<'a>) {
+fn collect_post_prefix<'a, S, B>(
+    mut receiver: Expression<S, B>,
+) -> parser_type!('a, Expression<S, B>)
+where
+    S: From<&'a str> + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+{
     fold(
         0..,
         next_step,
@@ -198,7 +220,7 @@ fn collect_post_prefix<'a>(mut receiver: Expression<'a>) -> parser_type!('a, Exp
                         Expression::Getter(inner_receiver, method) => {
                             Expression::invoke(*inner_receiver, Some(method), arguments)
                         }
-                        _ => Expression::invoke(acc, None, arguments),
+                        _ => Expression::invoke(acc, None::<S>, arguments),
                     }
                 }
             }
@@ -207,28 +229,36 @@ fn collect_post_prefix<'a>(mut receiver: Expression<'a>) -> parser_type!('a, Exp
 }
 
 #[derive(Debug)]
-enum PostfixStep<'a> {
-    Member(&'a str),
-    Index(Option<Box<Expression<'a>>>),
-    Invoke(Vec<Expression<'a>>),
+enum PostfixStep<S, B: Eq + Hash> {
+    Member(S),
+    Index(Option<Box<Expression<S, B>>>),
+    Invoke(Vec<Expression<S, B>>),
 }
 
-fn next_step<'a>(input: &'a str) -> PResult<'a, PostfixStep<'a>> {
+fn next_step<'a, S, B>(input: &'a str) -> IResult<&'a str, PostfixStep<S, B>>
+where
+    S: From<&'a str> + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+{
     alt((
         tokc('.')
             .and(terminated(ident_name, space0))
-            .map(|(_, name)| PostfixStep::Member(name)),
+            .map(|(_, name)| PostfixStep::Member(name.into())),
         delimited(tokc('['), opt(expr), tokc(']')).map(|idx| PostfixStep::Index(idx.map(Box::new))),
         delimited(tokc('('), comma_separated(expr), tokc(')')).map(PostfixStep::Invoke),
     ))
     .parse(input)
 }
 
-fn primary(input: &str) -> PResult<'_> {
+fn primary<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+where
+    S: From<&'a str> + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+{
     alt((
-        literal.map(Expression::Literal),
+        literal.map(Expression::literal),
         ident,
-        custom_ident.map(Expression::CustomID),
+        custom_ident.map(Expression::custom_id),
         list,
         js_map,
         paren,
@@ -236,22 +266,28 @@ fn primary(input: &str) -> PResult<'_> {
     .parse(input)
 }
 
-fn literal(input: &str) -> PResult<'_, Literal<'_>> {
+fn literal<B: From<String>>(input: &str) -> IResult<&str, Literal<B>> {
     alt((
         tok("true").map(|_| Literal::Boolean(true)),
         tok("false").map(|_| Literal::Boolean(false)),
         tok("null").map(|_| Literal::Null),
         tok("undefined").map(|_| Literal::Undefined),
         terminated(double, space0).map(Literal::Number),
-        terminated(string_literal, space0).map(|s| Literal::String(Cow::Owned(s))),
+        terminated(string_literal, space0).map(Literal::string),
     ))
     .parse(input)
 }
 
-fn ident(input: &str) -> PResult<'_> {
+fn ident<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+where
+    S: From<&'a str> + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+{
     let (input2, id) = terminated(ident_name, space0).parse(input)?;
     match (tok("=>"), expr).parse(input2) {
-        Ok((input3, (_arrow, body))) => Ok((input3, Expression::arrow_func(vec![id], body))),
+        Ok((input3, (_arrow, body))) => {
+            Ok((input3, Expression::arrow_func(vec![S::from(id)], body)))
+        }
         Err(_) => Ok((input2, Expression::id(id))),
     }
 }
@@ -302,19 +338,38 @@ where
     CommaSeparated { parser: item }
 }
 
-fn list(input: &str) -> PResult<'_> {
+fn list<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+where
+    S: From<&'a str> + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+{
     delimited(tokc('['), comma_separated(expr), tokc(']'))
         .map(Expression::List)
         .parse(input)
 }
 
-fn js_map(input: &str) -> PResult<'_> {
+fn js_map<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+where
+    S: From<&'a str> + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+{
     delimited(tokc('{'), comma_separated(map_entry), tokc('}'))
-        .map(|entries| Expression::Map(FromIterator::from_iter(entries)))
+        .map(|entries| {
+            Expression::map(
+                entries
+                    .into_iter()
+                    .map(|(key, val)| (key.into(), val))
+                    .collect(),
+            )
+        })
         .parse(input)
 }
 
-fn map_entry(input: &str) -> PResult<'_, (Cow<'_, str>, Expression<'_>)> {
+fn map_entry<'a, S, B>(input: &'a str) -> IResult<&'a str, (Cow<'a, str>, Expression<S, B>)>
+where
+    S: From<&'a str> + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+{
     (
         terminated(ident_name, space0)
             .map(Cow::Borrowed)
@@ -326,7 +381,11 @@ fn map_entry(input: &str) -> PResult<'_, (Cow<'_, str>, Expression<'_>)> {
         .parse(input)
 }
 
-fn paren<'a>(input: &'a str) -> PResult<'a> {
+fn paren<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+where
+    S: From<&'a str> + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+{
     let (i2, args) = delimited(tokc('('), comma_separated(expr), tokc(')')).parse(input)?;
     let mut first = (args.len() == 1).then(|| args[0].clone());
     allow_func_p(args)
@@ -339,13 +398,17 @@ fn paren<'a>(input: &'a str) -> PResult<'a> {
         .parse(i2)
 }
 
-fn allow_func_p<'a>(
-    params: Vec<Expression<'a>>,
-) -> impl Parser<&'a str, Output = Expression<'a>, Error = NomError<&'a str>> {
+fn allow_func_p<'a, S, B>(
+    mut params: Vec<Expression<S, B>>,
+) -> impl Parser<&'a str, Output = Expression<S, B>, Error = NomError<&'a str>>
+where
+    S: From<&'a str> + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+{
     (tok("=>"), expr).map_res(move |(_arrow, body)| {
-        params
-            .iter()
-            .map(Expression::as_id)
+        std::mem::take(&mut params)
+            .into_iter()
+            .map(Expression::take_id)
             .collect::<Option<Vec<_>>>()
             .map(|params| Expression::arrow_func(params, body))
             .ok_or(ErrorKind::Tag) // TODO: use proper error
@@ -360,17 +423,17 @@ fn tokc<'a>(c: char) -> parser_type!('a,char) {
     char(c).and(space0).map(|(c, _ws)| c)
 }
 
-fn ident_name(input: &str) -> PResult<'_, &str> {
+fn ident_name(input: &str) -> IResult<&str, &str> {
     peek(satisfy(AsChar::is_alpha))
         .flat_map(|_| alphanumeric0)
         .parse(input)
 }
 
-fn custom_ident(input: &str) -> PResult<'_, &str> {
+fn custom_ident(input: &str) -> IResult<&str, &str> {
     delimited(tag("${"), take_while(|char| char != '}'), char('}')).parse(input)
 }
 
-pub fn string_literal(input: &str) -> PResult<'_, String> {
+pub fn string_literal(input: &str) -> IResult<&str, String> {
     let (input2, delim) = char('"').or(char('\'')).parse(input)?;
     let escaped_p = alt((escaped_char, normal_char(delim)));
     terminated(many1(escaped_p), char(delim))
@@ -382,7 +445,7 @@ fn normal_char<'a>(delim: char) -> parser_type!('a, char) {
     verify(anychar, move |&c| c != delim && c != '\\')
 }
 
-fn escaped_char(input: &str) -> PResult<'_, char> {
+fn escaped_char(input: &str) -> IResult<&str, char> {
     preceded(
         char('\\'),
         alt((
@@ -403,9 +466,11 @@ fn escaped_char(input: &str) -> PResult<'_, char> {
 mod tests {
     use super::*;
 
+    type Expression<'a> = super::Expression<&'a str, Cow<'a, str>>;
+
     #[test]
     fn test_comma_separated() {
-        fn entry<'a>(input: &'a str) -> PResult<'a, &'a str> {
+        fn entry<'a>(input: &'a str) -> IResult<&'a str, &'a str> {
             terminated(ident_name, space0).parse(input)
         }
 
@@ -422,7 +487,9 @@ mod tests {
 
     #[test]
     fn test_comma_separated_fields() {
-        let (_, parsed) = comma_separated(map_entry).parse("'a': bc, b: 12").unwrap();
+        let (_, parsed) = comma_separated(map_entry::<&str, Cow<_>>)
+            .parse("'a': bc, b: 12")
+            .unwrap();
         assert_eq!(
             parsed,
             vec![
