@@ -1,7 +1,7 @@
 #[macro_use]
 mod helpers;
 
-use nom::{Err as NErr, Mode, combinator::eof};
+use nom::{Check, Err as NErr, Mode, OutputM, combinator::eof};
 use std::borrow::Cow;
 
 use crate::{BinOp, Expression, Literal, UnaryOp};
@@ -280,21 +280,50 @@ fn ident(input: &str) -> PResult<'_> {
     }
 }
 
+struct CommaSeparated<P> {
+    parser: P,
+}
+
+impl<'a, P> Parser<&'a str> for CommaSeparated<P>
+where
+    P: Parser<&'a str, Error = NomError<&'a str>> + Clone,
+{
+    type Output = Vec<P::Output>;
+
+    type Error = P::Error;
+
+    fn process<OM: OutputMode>(
+        &mut self,
+        input: &'a str,
+    ) -> nom::PResult<OM, &'a str, Self::Output, Self::Error> {
+        let Ok((input2, first)) = self.parser.process::<OM>(input) else {
+            return Ok((input, OM::Output::bind(Vec::new)));
+        };
+        let mut next_input = input2;
+        let mut items = OM::Output::map(first, |first| vec![first]);
+
+        let mut entry_p = preceded(tokc(','), self.parser.clone());
+
+        while let Ok((next_, entry)) = entry_p.process::<OM>(next_input) {
+            next_input = next_;
+            items = OM::Output::combine(items, entry, |mut current, new| {
+                current.push(new);
+                current
+            });
+        }
+        opt(tokc(','))
+            .process::<OutputM<Check, OM::Error, OM::Incomplete>>(next_input)
+            .map(|(rest, _)| (rest, items))
+    }
+}
+
 fn comma_separated<'a, P>(
     item: P,
 ) -> impl Parser<&'a str, Output = Vec<P::Output>, Error = P::Error>
 where
     P: Parser<&'a str, Error = NomError<&'a str>> + Clone,
 {
-    opt(item.clone())
-        .and(many0(preceded(tokc(','), item)))
-        .and(opt(tokc(',')))
-        .map(|((first, mut items), _trailing)| {
-            if let Some(first) = first {
-                items.insert(0, first);
-            }
-            items
-        })
+    CommaSeparated { parser: item }
 }
 
 fn list(input: &str) -> PResult<'_> {
@@ -311,7 +340,7 @@ fn js_map(input: &str) -> PResult<'_> {
 
 fn map_entry(input: &str) -> PResult<'_, (Cow<'_, str>, Expression<'_>)> {
     (
-        ident_name
+        terminated(ident_name, space0)
             .map(Cow::Borrowed)
             .or(string_literal.map(Cow::Owned)),
         preceded(space0, tokc(':')),
@@ -406,7 +435,12 @@ mod tests {
 
     #[test]
     fn test_comma_separated() {
-        let (_, parsed) = comma_separated(ident_name).parse("abc, def, ad,").unwrap();
+        fn entry<'a>(input: &'a str) -> PResult<'a, &'a str> {
+            terminated(ident_name, space0).parse(input)
+        }
+
+        let (rest, parsed) = comma_separated(entry).parse("abc, def, ad,").unwrap();
+        assert!(rest.is_empty());
         assert_eq!(parsed, vec!["abc", "def", "ad"]);
     }
 
