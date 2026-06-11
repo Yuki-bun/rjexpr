@@ -231,7 +231,7 @@ fn next_step<'a>(input: &'a str) -> PResult<'a, PostfixStep<'a>> {
 
 fn primary(input: &str) -> PResult<'_> {
     alt((
-        literal,
+        literal.map(Expression::Literal),
         ident,
         custom_ident.map(Expression::CustomID),
         list,
@@ -241,15 +241,14 @@ fn primary(input: &str) -> PResult<'_> {
     .parse(input)
 }
 
-fn literal(input: &str) -> PResult<'_> {
+fn literal(input: &str) -> PResult<'_, Literal<'_>> {
     alt((
-        tok("true").map(|_| Expression::Literal(Literal::Boolean(true))),
-        tok("false").map(|_| Expression::Literal(Literal::Boolean(false))),
-        tok("null").map(|_| Expression::Literal(Literal::Null)),
-        tok("undefined").map(|_| Expression::Literal(Literal::Undefined)),
-        terminated(double, space0).map(|n| Expression::Literal(Literal::Number(n))),
-        terminated(string_literal, space0)
-            .map(|s| Expression::Literal(Literal::String(Cow::Owned(s)))),
+        tok("true").map(|_| Literal::Boolean(true)),
+        tok("false").map(|_| Literal::Boolean(false)),
+        tok("null").map(|_| Literal::Null),
+        tok("undefined").map(|_| Literal::Undefined),
+        terminated(double, space0).map(Literal::Number),
+        terminated(string_literal, space0).map(|s| Literal::String(Cow::Owned(s))),
     ))
     .parse(input)
 }
