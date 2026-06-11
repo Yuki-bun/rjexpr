@@ -1,9 +1,10 @@
-mod combinator;
+#[macro_use]
 mod helpers;
+mod parser;
 
 use std::{borrow::Cow, collections::HashMap};
 
-pub use combinator::{DebugP, dbg_p, parse};
+pub use parser::parse;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal<'a> {

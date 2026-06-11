@@ -1,6 +1,3 @@
-#[macro_use]
-mod helpers;
-
 use nom::{Check, Err as NErr, Mode, OutputM, combinator::eof, multi::fold};
 use std::borrow::Cow;
 
@@ -16,8 +13,6 @@ use nom::{
     number::complete::double,
     sequence::{delimited, preceded, terminated},
 };
-
-pub use helpers::{DebugP, dbg_p};
 
 pub fn parse(input: &str) -> Result<Expression<'_>, String> {
     delimited(space0, opt(expr), eof)
