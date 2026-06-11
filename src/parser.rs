@@ -1,7 +1,7 @@
 use nom::{Check, Err as NErr, Mode, OutputM, combinator::eof, multi::fold};
 use std::{borrow::Cow, hash::Hash};
 
-use crate::{BinOp, Expression, Literal, UnaryOp};
+use crate::{BinOp, Expression, Literal, UnaryOp, iter::comma_separated_iter};
 use nom::{
     AsChar, IResult, OutputMode, Parser,
     branch::alt,
@@ -353,16 +353,15 @@ where
     S: From<&'a str> + Clone,
     B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
 {
-    delimited(tokc('{'), comma_separated(map_entry), tokc('}'))
-        .map(|entries| {
-            Expression::map(
-                entries
-                    .into_iter()
-                    .map(|(key, val)| (key.into(), val))
-                    .collect(),
-            )
-        })
-        .parse(input)
+    let (i2, _) = tokc('{').parse(input)?;
+    let mut entry_iter = comma_separated_iter(i2, map_entry);
+    let entries = entry_iter
+        .by_ref()
+        .map(|(key, value)| (key.into(), value))
+        .collect();
+    let (i3, _) = entry_iter.finish()?;
+    let (i4, _) = tokc('}').parse(i3)?;
+    Ok((i4, Expression::map(entries)))
 }
 
 fn map_entry<'a, S, B>(input: &'a str) -> IResult<&'a str, (Cow<'a, str>, Expression<S, B>)>
