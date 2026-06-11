@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use jexpr::{BinOp, Expression, Literal, UnaryOp, parse};
+use rjexpr::{BinOp, Expression, Literal, UnaryOp, parse};
 
 fn expect_parse(s: &str, expected: Expression<'_>) {
     let parsed = parse(s).unwrap();

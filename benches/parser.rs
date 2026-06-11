@@ -1,7 +1,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use jexpr::parse;
+use rjexpr::parse;
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("parse");
