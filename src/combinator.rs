@@ -1,7 +1,7 @@
 #[macro_use]
 mod helpers;
 
-use nom::{Check, Err as NErr, Mode, OutputM, combinator::eof};
+use nom::{Check, Err as NErr, Mode, OutputM, combinator::eof, multi::fold};
 use std::borrow::Cow;
 
 use crate::{BinOp, Expression, Literal, UnaryOp};
@@ -219,31 +219,27 @@ impl<'a> Parser<&'a str> for PostfixParser<'a> {
         &mut self,
         input: &'a str,
     ) -> nom::PResult<OM, &'a str, Self::Output, Self::Error> {
-        let mut current_expr = OM::Output::bind(|| self.receiver.clone());
-        let mut next_input = input;
-
-        // Loop continuously to chew through tokens until no more postfixes match
-        while let Ok((next, new_expr)) = next_step.process::<OM>(next_input) {
-            next_input = next;
-            current_expr =
-                OM::Output::combine(current_expr, new_expr, |current_expr, new| match new {
-                    PostfixStep::Member(name) => Expression::getter(current_expr, name),
-                    PostfixStep::Index(argument) => {
-                        Expression::index(current_expr, argument.map(|o| *o))
-                    }
+        fold(
+            0..,
+            next_step,
+            || std::mem::replace(&mut self.receiver, Expression::Empty),
+            |acc, new| {
+                match new {
+                    PostfixStep::Member(name) => Expression::getter(acc, name),
+                    PostfixStep::Index(argument) => Expression::index(acc, argument.map(|o| *o)),
                     PostfixStep::Invoke(arguments) => {
                         // Match on the *current* state of the accumulator
-                        match current_expr {
+                        match acc {
                             Expression::Getter(inner_receiver, method) => {
                                 Expression::invoke(*inner_receiver, Some(method), arguments)
                             }
-                            _ => Expression::invoke(current_expr, None, arguments),
+                            _ => Expression::invoke(acc, None, arguments),
                         }
                     }
-                })
-        }
-
-        Ok((next_input, current_expr))
+                }
+            },
+        )
+        .process::<OM>(input)
     }
 }
 
@@ -351,35 +347,29 @@ fn map_entry(input: &str) -> PResult<'_, (Cow<'_, str>, Expression<'_>)> {
 }
 
 fn paren<'a>(input: &'a str) -> PResult<'a> {
-    fn allow_func_p<'a>(params: Vec<Expression<'a>>) -> parser_type!('a, Expression<'a>) {
-        (tok("=>"), expr).map_res(move |(_arrow, body)| {
-            params
-                .iter()
-                .map(Expression::as_id)
-                .collect::<Option<Vec<_>>>()
-                .map(|params| Expression::ArrowFunc {
-                    params,
-                    body: Box::new(body),
-                })
-                .ok_or(ErrorKind::Tag) // TODO: use proper error
+    let (i2, args) = delimited(tokc('('), comma_separated(expr), tokc(')')).parse(input)?;
+    let mut first = (args.len() == 1).then(|| args[0].clone());
+    allow_func_p(args)
+        .or(move |_| {
+            std::mem::take(&mut first).map_or_else(
+                || Err(NErr::Error(NomError::new(i2, ErrorKind::Tag))),
+                |first| Ok((i2, Expression::paren(first))),
+            )
         })
-    }
+        .parse(i2)
+}
 
-    delimited(tokc('('), comma_separated(expr), tokc(')'))
-        .flat_map(|exprs| {
-            {
-                // TODO: remove this clone
-                allow_func_p(exprs.clone()).or(move |input: &'a str| {
-                    if exprs.len() == 1 {
-                        Ok((input, Expression::paren(exprs[0].clone())))
-                    } else {
-                        // TODO: add proper error
-                        Err(NErr::Error(NomError::new(input, ErrorKind::Tag)))
-                    }
-                })
-            }
-        })
-        .parse(input)
+fn allow_func_p<'a>(
+    params: Vec<Expression<'a>>,
+) -> impl Parser<&'a str, Output = Expression<'a>, Error = NomError<&'a str>> {
+    (tok("=>"), expr).map_res(move |(_arrow, body)| {
+        params
+            .iter()
+            .map(Expression::as_id)
+            .collect::<Option<Vec<_>>>()
+            .map(|params| Expression::arrow_func(params, body))
+            .ok_or(ErrorKind::Tag) // TODO: use proper error
+    })
 }
 
 fn tok<'a>(pattern: &'static str) -> parser_type!('a, &'a str) {
