@@ -67,7 +67,12 @@ fn should_parse_an_identifier() {
 
 #[test]
 fn should_parse_a_string_literal() {
+    expect_parse("''", string(""));
     expect_parse("\"abc\"", string("abc"));
+    expect_parse("'abc'", string("abc"));
+    expect_parse(r"'es\'caped'", string("es'caped"));
+    expect_parse("'es\\\"caped'", string("es\"caped"));
+    expect_parse("\"ab'cd\"", string("ab'cd"));
 }
 
 #[test]
