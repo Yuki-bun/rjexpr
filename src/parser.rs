@@ -8,7 +8,7 @@ use nom::{
     bytes::complete::{tag, take_while},
     character::complete::{alphanumeric0, anychar, char, satisfy, space0},
     combinator::{map, opt, peek, verify},
-    error::{Error as NomError, ErrorKind},
+    error::Error as NomError,
     multi::{many0, many1},
     number::complete::double,
     sequence::{delimited, preceded, terminated},
@@ -17,7 +17,7 @@ use nom::{
 pub fn parse<'a, S, B>(input: &'a str) -> Result<Expression<S, B>, String>
 where
     S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
 {
     delimited(space0, opt(expr), eof)
         .parse(input)
@@ -36,7 +36,7 @@ macro_rules! parser_type {
 fn expr<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
 where
     S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
 {
     assignment.parse(input)
 }
@@ -44,7 +44,7 @@ where
 fn assignment<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
 where
     S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
 {
     let (input2, left) = ternary.parse(input)?;
     let assign_not_eq = tokc('=');
@@ -59,7 +59,7 @@ where
 fn ternary<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
 where
     S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
 {
     let (input2, cond) = pipe.parse(input)?;
     match (tokc('?'), expr, tokc(':'), expr).parse(input2) {
@@ -73,7 +73,7 @@ macro_rules! left_assoc_binary {
         fn $name<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
         where
             S: From<&'a str> + Clone,
-            B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+            B: From<String> + From<Cow<'a, str>> + Hash + Eq
         {
             fn op_p(input: &str) -> IResult<&str, BinOp> {
                 alt((
@@ -164,7 +164,7 @@ where
 fn unary<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
 where
     S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
 {
     (unary_op, unary)
         .map(|(op, val)| {
@@ -193,7 +193,7 @@ fn unary_op(input: &str) -> IResult<&str, UnaryOp> {
 fn postfix<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
 where
     S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
 {
     primary.flat_map(collect_post_prefix).parse(input)
 }
@@ -204,7 +204,7 @@ fn collect_post_prefix<'a, S, B>(
 ) -> parser_type!('a, Expression<S, B>)
 where
     S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
 {
     fold(
         0..,
@@ -238,7 +238,7 @@ enum PostfixStep<S, B: Eq + Hash> {
 fn next_step<'a, S, B>(input: &'a str) -> IResult<&'a str, PostfixStep<S, B>>
 where
     S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
 {
     alt((
         tokc('.')
@@ -253,7 +253,7 @@ where
 fn primary<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
 where
     S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
 {
     alt((
         literal.map(Expression::literal),
@@ -281,7 +281,7 @@ fn literal<B: From<String>>(input: &str) -> IResult<&str, Literal<B>> {
 fn ident<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
 where
     S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
 {
     let (input2, id) = terminated(ident_name, space0).parse(input)?;
     match (tok("=>"), expr).parse(input2) {
@@ -341,7 +341,7 @@ where
 fn list<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
 where
     S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
 {
     delimited(tokc('['), comma_separated(expr), tokc(']'))
         .map(Expression::List)
@@ -351,7 +351,7 @@ where
 fn js_map<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
 where
     S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
 {
     let (i2, _) = tokc('{').parse(input)?;
     let mut entry_iter = comma_separated_iter(i2, map_entry);
@@ -367,7 +367,7 @@ where
 fn map_entry<'a, S, B>(input: &'a str) -> IResult<&'a str, (Cow<'a, str>, Expression<S, B>)>
 where
     S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
 {
     (
         terminated(ident_name, space0)
@@ -383,35 +383,56 @@ where
 fn paren<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
 where
     S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
+    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
 {
-    let (i2, args) = delimited(tokc('('), comma_separated(expr), tokc(')')).parse(input)?;
-    let mut first = (args.len() == 1).then(|| args[0].clone());
-    allow_func_p(args)
-        .or(move |_| {
-            std::mem::take(&mut first).map_or_else(
-                || Err(NErr::Error(NomError::new(i2, ErrorKind::Tag))),
-                |first| Ok((i2, Expression::paren(first))),
-            )
-        })
-        .parse(i2)
-}
+    let (i2, _) = tokc('(').parse(input)?;
+    let (i3, first_arg) = match expr.parse(i2) {
+        // (id) => body or (expr)
+        Ok((i3, Expression::ID(first_arg))) => (i3, first_arg),
+        Ok((i3, expr)) => {
+            let (i3, _) = tokc(')').parse(i3)?;
+            return Ok((i3, Expression::paren(expr)));
+        }
+        // Has to be ( ) => body
+        Err(NErr::Error(_)) => {
+            let (rest, (_, body)) = (tokc(')').and(tok("=>")), expr).parse(i2)?;
+            return Ok((rest, Expression::arrow_func(Vec::<S>::new(), body)));
+        }
+        Err(NErr::Failure(e)) => return Err(NErr::Failure(e)),
+        Err(NErr::Incomplete(e)) => return Err(NErr::Incomplete(e)),
+    };
 
-fn allow_func_p<'a, S, B>(
-    mut params: Vec<Expression<S, B>>,
-) -> impl Parser<&'a str, Output = Expression<S, B>, Error = NomError<&'a str>>
-where
-    S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq + Clone,
-{
-    (tok("=>"), expr).map_res(move |(_arrow, body)| {
-        std::mem::take(&mut params)
-            .into_iter()
-            .map(Expression::take_id)
-            .collect::<Option<Vec<_>>>()
-            .map(|params| Expression::arrow_func(params, body))
-            .ok_or(ErrorKind::Tag) // TODO: use proper error
-    })
+    // check if there are more than 2 ident insdie paren
+    let (i4, _) = match tokc(',').parse(i3) {
+        Ok(res) => res,
+        // Single ident insdie (). either (a) => body or (a)
+        Err(NErr::Error(_)) => {
+            let (i4, _) = tokc(')').parse(i3)?;
+            match preceded(tok("=>"), expr).parse(i4) {
+                Ok((rest, body)) => {
+                    return Ok((rest, Expression::arrow_func(vec![first_arg], body)));
+                }
+                Err(_) => return Ok((i4, Expression::paren(Expression::ID(first_arg)))),
+            }
+        }
+        Err(NErr::Failure(e)) => return Err(NErr::Failure(e)),
+        Err(NErr::Incomplete(e)) => return Err(NErr::Incomplete(e)),
+    };
+    let mut first_arg = Some(first_arg);
+    let (i5, (mut args, last_arg)) = fold(
+        0..,
+        (ident_name, space0.and(tokc(','))),
+        || vec![std::mem::take(&mut first_arg).unwrap()],
+        |mut acc, (new, _comma)| {
+            acc.push(new.into());
+            acc
+        },
+    )
+    .and(opt(terminated(ident_name, space0)))
+    .parse(i4)?;
+    args.extend(last_arg.map(S::from));
+    let (rest, body) = preceded(tok(")").and(tok("=>")), expr).parse(i5)?;
+    Ok((rest, Expression::arrow_func(args, body)))
 }
 
 fn tok<'a>(pattern: &'static str) -> parser_type!('a, &'a str) {
