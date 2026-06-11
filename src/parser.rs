@@ -9,7 +9,7 @@ use nom::{
     character::complete::{alphanumeric0, anychar, char, satisfy, space0},
     combinator::{map, opt, peek, verify},
     error::Error as NomError,
-    multi::{many0, many1},
+    multi::many0,
     number::complete::double,
     sequence::{delimited, preceded, terminated},
 };
@@ -266,7 +266,10 @@ where
     .parse(input)
 }
 
-fn literal<B: From<String>>(input: &str) -> IResult<&str, Literal<B>> {
+fn literal<'a, B>(input: &'a str) -> IResult<&'a str, Literal<B>>
+where
+    B: From<Cow<'a, str>>,
+{
     alt((
         tok("true").map(|_| Literal::Boolean(true)),
         tok("false").map(|_| Literal::Boolean(false)),
@@ -372,7 +375,7 @@ where
     (
         terminated(ident_name, space0)
             .map(Cow::Borrowed)
-            .or(string_literal.map(Cow::Owned)),
+            .or(string_literal),
         preceded(space0, tokc(':')),
         expr,
     )
@@ -453,12 +456,31 @@ fn custom_ident(input: &str) -> IResult<&str, &str> {
     delimited(tag("${"), take_while(|char| char != '}'), char('}')).parse(input)
 }
 
-pub fn string_literal(input: &str) -> IResult<&str, String> {
+pub fn string_literal(input: &str) -> IResult<&str, Cow<'_, str>> {
     let (input2, delim) = char('"').or(char('\'')).parse(input)?;
-    let escaped_p = alt((escaped_char, normal_char(delim)));
-    terminated(many1(escaped_p), char(delim))
-        .map(|chars| chars.iter().collect())
-        .parse(input2)
+    let (input3, non_escape) = take_while(move |c| c != delim && c != '\\').parse(input2)?;
+    match anychar.parse(input3) {
+        Ok((input4, delim_or_escape)) => {
+            if delim_or_escape == delim {
+                Ok((input4, Cow::Borrowed(non_escape)))
+            } else {
+                fold(
+                    0..,
+                    alt((normal_char(delim), escaped_char)),
+                    || non_escape.to_string(),
+                    |mut acc, new| {
+                        acc.push(new);
+                        acc
+                    },
+                )
+                .map(Cow::Owned)
+                .and(char(delim))
+                .map(|(string, _delim)| string)
+                .parse(input3)
+            }
+        }
+        Err(e) => Err(e),
+    }
 }
 
 fn normal_char<'a>(delim: char) -> parser_type!('a, char) {
@@ -470,6 +492,7 @@ fn escaped_char(input: &str) -> IResult<&str, char> {
         char('\\'),
         alt((
             char('"'),
+            char('\''),
             char('\\'),
             char('/'),
             map(char('b'), |_| '\x08'), // Backspace
