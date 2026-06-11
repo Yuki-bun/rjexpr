@@ -405,10 +405,11 @@ where
         Err(NErr::Incomplete(e)) => return Err(NErr::Incomplete(e)),
     };
 
-    // check if there are more than 2 ident insdie paren
-    let (i4, _) = match tokc(',').parse(i3) {
+    // check if there are more than 2 ident inside paren
+    // which means it has to be arrow func
+    match tokc(',').parse(i3) {
         Ok(res) => res,
-        // Single ident insdie (). either (a) => body or (a)
+        // Single ident inside paren. either (a) => body or (a)
         Err(NErr::Error(_)) => {
             let (i4, _) = tokc(')').parse(i3)?;
             match preceded(tok("=>"), expr).parse(i4) {
@@ -421,20 +422,19 @@ where
         Err(NErr::Failure(e)) => return Err(NErr::Failure(e)),
         Err(NErr::Incomplete(e)) => return Err(NErr::Incomplete(e)),
     };
+
     let mut first_arg = Some(first_arg);
-    let (i5, (mut args, last_arg)) = fold(
+    let (i4, args) = fold(
         0..,
-        (ident_name, space0.and(tokc(','))),
+        delimited(tokc(','), ident_name, space0),
         || vec![std::mem::take(&mut first_arg).unwrap()],
-        |mut acc, (new, _comma)| {
+        |mut acc, new| {
             acc.push(new.into());
             acc
         },
     )
-    .and(opt(terminated(ident_name, space0)))
-    .parse(i4)?;
-    args.extend(last_arg.map(S::from));
-    let (rest, body) = preceded(tok(")").and(tok("=>")), expr).parse(i5)?;
+    .parse(i3)?;
+    let (rest, body) = preceded(tok(")").and(tok("=>")), expr).parse(i4)?;
     Ok((rest, Expression::arrow_func(args, body)))
 }
 
