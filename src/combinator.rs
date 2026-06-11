@@ -184,9 +184,31 @@ fn unary_op(input: &str) -> PResult<'_, UnaryOp> {
 }
 
 fn postfix(input: &str) -> PResult<'_> {
-    primary
-        .flat_map(|receiver| PostfixParser { receiver })
-        .parse(input)
+    primary.flat_map(collect_post_prefix).parse(input)
+}
+
+/// Parser returned by this function should only be used once
+fn collect_post_prefix<'a>(mut receiver: Expression<'a>) -> parser_type!('a, Expression<'a>) {
+    fold(
+        0..,
+        next_step,
+        move || std::mem::replace(&mut receiver, Expression::Empty),
+        |acc, new| {
+            match new {
+                PostfixStep::Member(name) => Expression::getter(acc, name),
+                PostfixStep::Index(argument) => Expression::index(acc, argument.map(|o| *o)),
+                PostfixStep::Invoke(arguments) => {
+                    // Match on the *current* state of the accumulator
+                    match acc {
+                        Expression::Getter(inner_receiver, method) => {
+                            Expression::invoke(*inner_receiver, Some(method), arguments)
+                        }
+                        _ => Expression::invoke(acc, None, arguments),
+                    }
+                }
+            }
+        },
+    )
 }
 
 #[derive(Debug)]
@@ -194,10 +216,6 @@ enum PostfixStep<'a> {
     Member(&'a str),
     Index(Option<Box<Expression<'a>>>),
     Invoke(Vec<Expression<'a>>),
-}
-
-struct PostfixParser<'a> {
-    receiver: Expression<'a>,
 }
 
 fn next_step<'a>(input: &'a str) -> PResult<'a, PostfixStep<'a>> {
@@ -209,38 +227,6 @@ fn next_step<'a>(input: &'a str) -> PResult<'a, PostfixStep<'a>> {
         delimited(tokc('('), comma_separated(expr), tokc(')')).map(PostfixStep::Invoke),
     ))
     .parse(input)
-}
-
-impl<'a> Parser<&'a str> for PostfixParser<'a> {
-    type Output = Expression<'a>;
-    type Error = NomError<&'a str>;
-
-    fn process<OM: OutputMode>(
-        &mut self,
-        input: &'a str,
-    ) -> nom::PResult<OM, &'a str, Self::Output, Self::Error> {
-        fold(
-            0..,
-            next_step,
-            || std::mem::replace(&mut self.receiver, Expression::Empty),
-            |acc, new| {
-                match new {
-                    PostfixStep::Member(name) => Expression::getter(acc, name),
-                    PostfixStep::Index(argument) => Expression::index(acc, argument.map(|o| *o)),
-                    PostfixStep::Invoke(arguments) => {
-                        // Match on the *current* state of the accumulator
-                        match acc {
-                            Expression::Getter(inner_receiver, method) => {
-                                Expression::invoke(*inner_receiver, Some(method), arguments)
-                            }
-                            _ => Expression::invoke(acc, None, arguments),
-                        }
-                    }
-                }
-            },
-        )
-        .process::<OM>(input)
-    }
 }
 
 fn primary(input: &str) -> PResult<'_> {
