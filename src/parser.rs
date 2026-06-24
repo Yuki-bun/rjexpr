@@ -1,7 +1,9 @@
 use nom::{Check, Err as NErr, Mode, OutputM, combinator::eof, multi::fold};
-use std::{borrow::Cow, hash::Hash};
+use std::borrow::Cow;
 
-use crate::{AssignTarget, BinOp, Expression, Literal, UnaryOp, iter::comma_separated_iter};
+use crate::{
+    AssignTarget, BinOp, Expression, Literal, StrRepr, UnaryOp, iter::comma_separated_iter,
+};
 use nom::{
     AsChar, IResult, OutputMode, Parser,
     branch::alt,
@@ -14,10 +16,10 @@ use nom::{
     sequence::{delimited, preceded, terminated},
 };
 
-pub fn parse<'a, S, B>(input: &'a str) -> Result<Expression<S, B>, String>
+pub fn parse<'a, S: StrRepr>(input: &'a str) -> Result<Expression<S>, String>
 where
-    S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
+    S::Str: From<&'a str>,
+    S::Escaped: From<Cow<'a, str>>,
 {
     delimited(space0, opt(expr), eof)
         .parse(input)
@@ -25,7 +27,7 @@ where
         .map_err(|err| err.to_string())
 }
 
-type PResult<'a, S, B> = IResult<&'a str, Expression<S, B>>;
+type PResult<'a, S> = IResult<&'a str, Expression<S>>;
 
 macro_rules! parser_type {
     ($lifetime:tt, $output:ty) => {
@@ -33,18 +35,18 @@ macro_rules! parser_type {
     };
 }
 
-fn expr<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+fn expr<'a, S: StrRepr>(input: &'a str) -> PResult<'a, S>
 where
-    S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
+    S::Str: From<&'a str>,
+    S::Escaped: From<Cow<'a, str>>,
 {
     assignment.parse(input)
 }
 
-fn assignment<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+fn assignment<'a, S: StrRepr>(input: &'a str) -> PResult<'a, S>
 where
-    S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
+    S::Str: From<&'a str>,
+    S::Escaped: From<Cow<'a, str>>,
 {
     let (input2, left) = ternary.parse(input)?;
     match AssignTarget::try_from(left) {
@@ -56,10 +58,10 @@ where
     }
 }
 
-fn ternary<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+fn ternary<'a, S: StrRepr>(input: &'a str) -> PResult<'a, S>
 where
-    S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
+    S::Str: From<&'a str>,
+    S::Escaped: From<Cow<'a, str>>,
 {
     let (input2, cond) = pipe.parse(input)?;
     match (tokc('?'), expr, tokc(':'), expr).parse(input2) {
@@ -70,10 +72,10 @@ where
 
 macro_rules! left_assoc_binary {
     ($name:ident, $expr:ident, $(( $op:literal, $op_t:ident )),*) => {
-        fn $name<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+        fn $name<'a, S: StrRepr>(input: &'a str) -> PResult<'a, S>
         where
-            S: From<&'a str> + Clone,
-            B: From<String> + From<Cow<'a, str>> + Hash + Eq
+            S::Str: From<&'a str>,
+            S::Escaped: From<Cow<'a, str>>,
         {
             fn op_p(input: &str) -> IResult<&str, BinOp> {
                 alt((
@@ -161,10 +163,10 @@ where
     }
 }
 
-fn unary<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+fn unary<'a, S: StrRepr>(input: &'a str) -> PResult<'a, S>
 where
-    S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
+    S::Str: From<&'a str>,
+    S::Escaped: From<Cow<'a, str>>,
 {
     (unary_op, unary)
         .map(|(op, val)| {
@@ -190,21 +192,21 @@ fn unary_op(input: &str) -> IResult<&str, UnaryOp> {
     .parse(input)
 }
 
-fn postfix<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+fn postfix<'a, S: StrRepr>(input: &'a str) -> PResult<'a, S>
 where
-    S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
+    S::Str: From<&'a str>,
+    S::Escaped: From<Cow<'a, str>>,
 {
     primary.flat_map(collect_post_prefix).parse(input)
 }
 
 /// Parser returned by this function should only be used once
-fn collect_post_prefix<'a, S, B>(
-    mut receiver: Expression<S, B>,
-) -> parser_type!('a, Expression<S, B>)
+fn collect_post_prefix<'a, S: StrRepr>(
+    mut receiver: Expression<S>,
+) -> parser_type!('a, Expression< S>)
 where
-    S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
+    S::Str: From<&'a str>,
+    S::Escaped: From<Cow<'a, str>>,
 {
     fold(
         0..,
@@ -220,7 +222,7 @@ where
                         Expression::Getter(inner_receiver, method) => {
                             Expression::invoke(*inner_receiver, Some(method), arguments)
                         }
-                        _ => Expression::invoke(acc, None::<S>, arguments),
+                        _ => Expression::invoke(acc, None::<S::Str>, arguments),
                     }
                 }
             }
@@ -229,16 +231,16 @@ where
 }
 
 #[derive(Debug)]
-enum PostfixStep<S, B: Eq + Hash> {
-    Member(S),
-    Index(Option<Box<Expression<S, B>>>),
-    Invoke(Vec<Expression<S, B>>),
+enum PostfixStep<S: StrRepr> {
+    Member(S::Str),
+    Index(Option<Box<Expression<S>>>),
+    Invoke(Vec<Expression<S>>),
 }
 
-fn next_step<'a, S, B>(input: &'a str) -> IResult<&'a str, PostfixStep<S, B>>
+fn next_step<'a, S: StrRepr>(input: &'a str) -> IResult<&'a str, PostfixStep<S>>
 where
-    S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
+    S::Str: From<&'a str>,
+    S::Escaped: From<Cow<'a, str>>,
 {
     alt((
         tokc('.')
@@ -250,10 +252,10 @@ where
     .parse(input)
 }
 
-fn primary<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+fn primary<'a, S: StrRepr>(input: &'a str) -> PResult<'a, S>
 where
-    S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
+    S::Str: From<&'a str>,
+    S::Escaped: From<Cow<'a, str>>,
 {
     alt((
         literal.map(Expression::literal),
@@ -281,15 +283,15 @@ where
     .parse(input)
 }
 
-fn ident<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+fn ident<'a, S: StrRepr>(input: &'a str) -> PResult<'a, S>
 where
-    S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
+    S::Str: From<&'a str>,
+    S::Escaped: From<Cow<'a, str>>,
 {
     let (input2, id) = terminated(ident_name, space0).parse(input)?;
     match (tok("=>"), expr).parse(input2) {
         Ok((input3, (_arrow, body))) => {
-            Ok((input3, Expression::arrow_func(vec![S::from(id)], body)))
+            Ok((input3, Expression::arrow_func(vec![S::Str::from(id)], body)))
         }
         Err(_) => Ok((input2, Expression::id(id))),
     }
@@ -341,20 +343,20 @@ where
     CommaSeparated { parser: item }
 }
 
-fn list<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+fn list<'a, S: StrRepr>(input: &'a str) -> PResult<'a, S>
 where
-    S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
+    S::Str: From<&'a str>,
+    S::Escaped: From<Cow<'a, str>>,
 {
     delimited(tokc('['), comma_separated(expr), tokc(']'))
         .map(Expression::List)
         .parse(input)
 }
 
-fn js_map<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+fn js_map<'a, S: StrRepr>(input: &'a str) -> PResult<'a, S>
 where
-    S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
+    S::Str: From<&'a str>,
+    S::Escaped: From<Cow<'a, str>>,
 {
     let (i2, _) = tokc('{').parse(input)?;
     let mut entry_iter = comma_separated_iter(i2, map_entry);
@@ -367,10 +369,10 @@ where
     Ok((i4, Expression::map(entries)))
 }
 
-fn map_entry<'a, S, B>(input: &'a str) -> IResult<&'a str, (Cow<'a, str>, Expression<S, B>)>
+fn map_entry<'a, S: StrRepr>(input: &'a str) -> IResult<&'a str, (Cow<'a, str>, Expression<S>)>
 where
-    S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
+    S::Str: From<&'a str>,
+    S::Escaped: From<Cow<'a, str>>,
 {
     (
         terminated(ident_name, space0)
@@ -383,10 +385,10 @@ where
         .parse(input)
 }
 
-fn paren<'a, S, B>(input: &'a str) -> PResult<'a, S, B>
+fn paren<'a, S: StrRepr>(input: &'a str) -> PResult<'a, S>
 where
-    S: From<&'a str> + Clone,
-    B: From<String> + From<Cow<'a, str>> + Hash + Eq,
+    S::Str: From<&'a str>,
+    S::Escaped: From<Cow<'a, str>>,
 {
     let (i2, _) = tokc('(').parse(input)?;
     let (i3, first_arg) = match expr.parse(i2) {
@@ -399,7 +401,7 @@ where
         // Has to be ( ) => body
         Err(NErr::Error(_)) => {
             let (rest, (_, body)) = (tokc(')').and(tok("=>")), expr).parse(i2)?;
-            return Ok((rest, Expression::arrow_func(Vec::<S>::new(), body)));
+            return Ok((rest, Expression::arrow_func(Vec::<S::Str>::new(), body)));
         }
         Err(NErr::Failure(e)) => return Err(NErr::Failure(e)),
         Err(NErr::Incomplete(e)) => return Err(NErr::Incomplete(e)),
@@ -507,13 +509,15 @@ fn escaped_char(input: &str) -> IResult<&str, char> {
 
 #[cfg(test)]
 mod tests {
+    use crate::BorrowedRepr;
+
     use super::*;
 
-    type Expression<'a> = super::Expression<&'a str, Cow<'a, str>>;
+    type Expression<'a> = super::Expression<BorrowedRepr<'a>>;
 
     #[test]
     fn test_comma_separated() {
-        fn entry<'a>(input: &'a str) -> IResult<&'a str, &'a str> {
+        fn entry(input: &str) -> IResult<&str, &str> {
             terminated(ident_name, space0).parse(input)
         }
 
@@ -530,7 +534,7 @@ mod tests {
 
     #[test]
     fn test_comma_separated_fields() {
-        let (_, parsed) = comma_separated(map_entry::<&str, Cow<_>>)
+        let (_, parsed) = comma_separated(map_entry::<BorrowedRepr>)
             .parse("'a': bc, b: 12")
             .unwrap();
         assert_eq!(

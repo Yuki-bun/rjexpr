@@ -1,10 +1,10 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use rjexpr::{AssignTarget, BinOp, Literal, UnaryOp, parse};
+use rjexpr::{AssignTarget, BinOp, BorrowedRepr, Literal, OwnedRepr, UnaryOp, parse};
 
-type Expression<'a> = rjexpr::Expression<&'a str, Cow<'a, str>>;
+type Expression<'a> = rjexpr::Expression<BorrowedRepr<'a>>;
 
-fn expect_parse(s: &str, expected: Expression<'_>) {
+fn expect_parse<'a>(s: &'a str, expected: Expression<'a>) {
     let parsed = parse(s).unwrap();
     assert_eq!(parsed, expected)
 }
@@ -34,7 +34,7 @@ fn op(s: &str) -> BinOp {
     }
 }
 
-fn num(n: f64) -> Expression<'static> {
+fn num<'a>(n: f64) -> Expression<'a> {
     Expression::literal(Literal::Number(n))
 }
 
@@ -46,11 +46,11 @@ fn boolean(b: bool) -> Expression<'static> {
     Expression::literal(Literal::Boolean(b))
 }
 
-fn null() -> Expression<'static> {
+fn null<'a>() -> Expression<'a> {
     Expression::literal(Literal::Null)
 }
 
-fn id(name: &'static str) -> Expression<'static> {
+fn id(name: &str) -> Expression<'_> {
     Expression::id(name)
 }
 
@@ -156,7 +156,7 @@ fn should_parse_assign_with_equality() {
         ),
     );
 
-    parse::<String, String>("a == c = d").expect_err("cannot assign to a equality");
+    parse::<'static, OwnedRepr>("a == c = d").expect_err("cannot assign to a equality");
 }
 
 #[test]
