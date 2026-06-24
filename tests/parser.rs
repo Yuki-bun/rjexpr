@@ -193,15 +193,12 @@ fn should_parse_arrow_functions() {
     expect_parse(
         "(() => x)()",
         Expression::invoke(
-            Expression::paren(Expression::arrow_func(Vec::<&str>::new(), id("x"))),
+            Expression::arrow_func(Vec::<&str>::new(), id("x")),
             None::<&str>,
             vec![],
         ),
     );
-    expect_parse(
-        "(a => x)",
-        Expression::paren(Expression::arrow_func(vec!["a"], id("x"))),
-    );
+    expect_parse("(a => x)", Expression::arrow_func(vec!["a"], id("x")));
     expect_parse("a => x", Expression::arrow_func(vec!["a"], id("x")));
 }
 
@@ -338,18 +335,14 @@ fn should_parse_chained_function_calls() {
 
 #[test]
 fn should_parse_parenthesized_expression() {
-    expect_parse("(a)", Expression::paren(id("a")));
+    expect_parse("(a)", id("a"));
     expect_parse(
         "(( 3 * ((1 + 2)) ))",
-        Expression::paren(Expression::paren(Expression::binary(
+        Expression::binary(
             num(3.0),
             BinOp::Multiply,
-            Expression::paren(Expression::paren(Expression::binary(
-                num(1.0),
-                BinOp::Add,
-                num(2.0),
-            ))),
-        ))),
+            Expression::binary(num(1.0), BinOp::Add, num(2.0)),
+        ),
     );
 }
 

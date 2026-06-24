@@ -67,7 +67,6 @@ pub enum Expression<S, B: Eq + Hash> {
         right: Box<Expression<S, B>>,
     },
     Getter(Box<Expression<S, B>>, S),
-    Paren(Box<Expression<S, B>>),
     Index {
         receiver: Box<Expression<S, B>>,
         argument: Option<Box<Expression<S, B>>>,
@@ -126,10 +125,6 @@ where
 
     pub fn getter(object: Self, key: impl Into<S>) -> Self {
         Self::Getter(Box::new(object), key.into())
-    }
-
-    pub fn paren(expr: Self) -> Self {
-        Self::Paren(Box::new(expr))
     }
 
     pub fn index(receiver: Self, argument: Option<Self>) -> Self {
@@ -221,13 +216,6 @@ where
     pub fn as_getter(&self) -> Option<(&Self, &S)> {
         match self {
             Self::Getter(object, key) => Some((object.as_ref(), key)),
-            _ => None,
-        }
-    }
-
-    pub fn as_paren(&self) -> Option<&Self> {
-        match self {
-            Self::Paren(expr) => Some(expr.as_ref()),
             _ => None,
         }
     }

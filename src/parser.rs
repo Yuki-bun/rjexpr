@@ -394,7 +394,7 @@ where
         Ok((i3, Expression::ID(first_arg))) => (i3, first_arg),
         Ok((i3, expr)) => {
             let (i3, _) = tokc(')').parse(i3)?;
-            return Ok((i3, Expression::paren(expr)));
+            return Ok((i3, expr));
         }
         // Has to be ( ) => body
         Err(NErr::Error(_)) => {
@@ -416,7 +416,7 @@ where
                 Ok((rest, body)) => {
                     return Ok((rest, Expression::arrow_func(vec![first_arg], body)));
                 }
-                Err(_) => return Ok((i4, Expression::paren(Expression::ID(first_arg)))),
+                Err(_) => return Ok((i4, Expression::ID(first_arg))),
             }
         }
         Err(NErr::Failure(e)) => return Err(NErr::Failure(e)),
@@ -548,6 +548,6 @@ mod tests {
     #[test]
     fn try_stuff() {
         let (_, parsed) = paren.parse("(abc)").unwrap();
-        assert_eq!(parsed, Expression::paren(Expression::id("abc")));
+        assert_eq!(parsed, Expression::id("abc"));
     }
 }
