@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use rjexpr::{BinOp, Literal, UnaryOp, parse};
+use rjexpr::{AssignTarget, BinOp, Literal, UnaryOp, parse};
 
 type Expression<'a> = rjexpr::Expression<&'a str, Cow<'a, str>>;
 
@@ -11,7 +11,6 @@ fn expect_parse(s: &str, expected: Expression<'_>) {
 
 fn op(s: &str) -> BinOp {
     match s {
-        "=" => BinOp::Assign,
         "+" => BinOp::Add,
         "-" => BinOp::Subtract,
         "*" => BinOp::Multiply,
@@ -120,7 +119,7 @@ fn should_parse_unary_operators() {
 #[test]
 fn should_parse_binary_operators() {
     let operators = [
-        "=", "+", "-", "*", "/", "%", "^", "==", "!=", ">", "<", ">=", "<=", "||", "&&", "??", "&",
+        "+", "-", "*", "/", "%", "^", "==", "!=", ">", "<", ">=", "<=", "||", "&&", "??", "&",
         "===", "!==", "|", "??",
     ];
     for &op_str in &operators {
@@ -143,21 +142,21 @@ fn should_parse_binary_operators() {
 fn should_parse_assign_with_equality() {
     expect_parse(
         "a = c == d",
-        Expression::binary(
-            Expression::id("a"),
-            BinOp::Assign,
+        Expression::assign(
+            AssignTarget::ID("a"),
             Expression::binary(Expression::id("c"), BinOp::Equal, Expression::id("d")),
         ),
     );
 
     expect_parse(
-        "a == c = d",
-        Expression::binary(
-            Expression::binary(Expression::id("a"), BinOp::Equal, Expression::id("c")),
-            BinOp::Assign,
-            Expression::id("d"),
+        "a.b = c",
+        Expression::assign(
+            AssignTarget::Getter(Expression::id("a"), "b"),
+            Expression::id("c"),
         ),
     );
+
+    parse::<String, String>("a == c = d").expect_err("cannot assign to a equality");
 }
 
 #[test]

@@ -1,7 +1,7 @@
 use nom::{Check, Err as NErr, Mode, OutputM, combinator::eof, multi::fold};
 use std::{borrow::Cow, hash::Hash};
 
-use crate::{BinOp, Expression, Literal, UnaryOp, iter::comma_separated_iter};
+use crate::{AssignTarget, BinOp, Expression, Literal, UnaryOp, iter::comma_separated_iter};
 use nom::{
     AsChar, IResult, OutputMode, Parser,
     branch::alt,
@@ -47,12 +47,12 @@ where
     B: From<String> + From<Cow<'a, str>> + Hash + Eq,
 {
     let (input2, left) = ternary.parse(input)?;
-    let assign_not_eq = tokc('=');
-    match (assign_not_eq, expr).parse(input2) {
-        Ok((input3, (_assign, right))) => {
-            Ok((input3, Expression::binary(left, BinOp::Assign, right)))
-        }
-        Err(_) => Ok((input2, left)),
+    match AssignTarget::try_from(left) {
+        Ok(assigned) => match (tokc('='), expr).parse(input2) {
+            Ok((input3, (_assign, right))) => Ok((input3, Expression::assign(assigned, right))),
+            Err(_) => Ok((input2, Expression::from(assigned))),
+        },
+        Err(left) => Ok((input2, left)),
     }
 }
 

@@ -31,7 +31,6 @@ pub enum UnaryOp {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinOp {
-    Assign,          // =
     Add,             // +
     Subtract,        // -
     Multiply,        // *
@@ -60,6 +59,7 @@ pub enum Expression<S, B: Eq + Hash> {
     Empty,
     ID(S),
     CustomID(S),
+    Assign(Box<AssignTarget<S, B>>, Box<Expression<S, B>>),
     Unary(UnaryOp, Box<Expression<S, B>>),
     Binary {
         op: BinOp,
@@ -87,6 +87,33 @@ pub enum Expression<S, B: Eq + Hash> {
         params: Vec<S>,
         body: Box<Expression<S, B>>,
     },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum AssignTarget<S, B: Eq + Hash> {
+    ID(S),
+    Getter(Expression<S, B>, S),
+}
+
+impl<S, B: Hash + Eq> TryFrom<Expression<S, B>> for AssignTarget<S, B> {
+    type Error = Expression<S, B>;
+
+    fn try_from(value: Expression<S, B>) -> Result<Self, Self::Error> {
+        match value {
+            Expression::ID(id) => Ok(AssignTarget::ID(id)),
+            Expression::Getter(receiver, field) => Ok(AssignTarget::Getter(*receiver, field)),
+            val => Err(val),
+        }
+    }
+}
+
+impl<S, B: Hash + Eq> From<AssignTarget<S, B>> for Expression<S, B> {
+    fn from(value: AssignTarget<S, B>) -> Self {
+        match value {
+            AssignTarget::ID(id) => Self::ID(id),
+            AssignTarget::Getter(receiver, field) => Self::Getter(Box::new(receiver), field),
+        }
+    }
 }
 
 impl<S, B> Expression<S, B>
@@ -117,6 +144,10 @@ where
 
     pub fn custom_id(name: impl Into<S>) -> Self {
         Self::CustomID(name.into())
+    }
+
+    pub fn assign(assigned: AssignTarget<S, B>, value: Self) -> Self {
+        Self::Assign(Box::new(assigned), Box::new(value))
     }
 
     pub fn unary(op: UnaryOp, operand: Self) -> Self {
